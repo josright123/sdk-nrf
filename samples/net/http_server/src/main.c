@@ -6,6 +6,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <errno.h>
 
 #include <zephyr/kernel.h>
@@ -218,8 +219,41 @@ static int handle_put(struct http_req *request, char *response, size_t response_
 static int handle_get(struct http_req *request, char *response, size_t response_size)
 {
 	int ret;
-	char body[2];
+	char body[512];
 	uint8_t led_id, led_index;
+
+	/* Handle root path - return HTML guide page */
+	if (strcmp(request->url, "/") == 0) {
+		ret = snprintk(body, sizeof(body),
+			       "<!DOCTYPE html><html><head><title>HTTP Server</title></head>"
+			       "<body><h1>nRF HTTP Server</h1>"
+			       "<p>LED 1: %d</p><p>LED 2: %d</p>"
+			       "<p>API Usage:</p>"
+			       "<ul><li>GET /led/1 - Get LED 1 state</li>"
+			       "<li>GET /led/2 - Get LED 2 state</li>"
+			       "<li>PUT /led/1 with body '0' or '1' - Set LED 1</li>"
+			       "<li>PUT /led/2 with body '0' or '1' - Set LED 2</li></ul>"
+			       "</body></html>",
+			       led_states[0], led_states[1]);
+		if ((ret < 0) || (ret >= sizeof(body))) {
+			return -ENOBUFS;
+		}
+
+		ret = snprintk(response, response_size,
+			       "%sContent-Type: text/html\r\nContent-Length: %d\r\n\r\n%s",
+			       RESPONSE_200, strlen(body), body);
+		if ((ret < 0) || (ret >= response_size)) {
+			return -ENOBUFS;
+		}
+		return 0;
+	}
+
+	/* Ignore favicon and other browser requests */
+	if (strncmp(request->url, "/favicon.ico", 12) == 0 ||
+	    strncmp(request->url, "/apple-touch-icon", 17) == 0) {
+		/* Return 404 for favicon and similar requests */
+		return -EINVAL;
+	}
 
 	/* Get LED ID */
 	ret = sscanf(request->url, "/led/%hhu", &led_id);
@@ -242,7 +276,7 @@ static int handle_get(struct http_req *request, char *response, size_t response_
 	}
 
 	ret = snprintk(response, response_size,
-		       "%sContent-Type: text/plain\r\n\r\nContent-Length: %d\r\n\r\n%s",
+		       "%sContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s",
 		       RESPONSE_200, strlen(body), body);
 	if ((ret < 0) || (ret >= response_size)) {
 		return -ENOBUFS;
@@ -654,6 +688,9 @@ void start_listener(void)
 		k_thread_start(tcp4_thread_id);
 	}
 }
+
+#define MAIN_BSACIC_COUNT 1000
+int endc = 0;
 
 int main(void)
 {
