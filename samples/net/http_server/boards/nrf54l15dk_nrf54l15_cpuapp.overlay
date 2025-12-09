@@ -72,7 +72,7 @@
 		int-gpios = <&gpio0 3 GPIO_ACTIVE_LOW>;
 		
 		/* Local MAC address */
-		local-mac-address = [00 11 22 33 44 55];
+		local-mac-address = [00 00 00 00 00 00]; /* [00 11 22 33 44 55]; */
 	};
 };
 
