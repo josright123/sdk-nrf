@@ -23,6 +23,7 @@
 #include <zephyr/net/net_event.h>
 #include <zephyr/net/conn_mgr_monitor.h>
 #include <zephyr/net/conn_mgr_connectivity.h>
+#include <zephyr/net/dhcpv4.h>
 
 #include <zephyr/net/http/client.h>
 #include <zephyr/net/http/parser.h>
@@ -67,6 +68,9 @@ DNS_SD_REGISTER_TCP_SERVICE(http_server_sd, CONFIG_NET_HOSTNAME, "_http", "local
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
 static struct net_mgmt_event_callback conn_cb;
+#if defined(CONFIG_NET_IPV4)
+static struct net_mgmt_event_callback ipv4_cb;
+#endif /* defined(CONFIG_NET_IPV4) */
 
 struct http_req {
 	struct http_parser parser;
@@ -150,6 +154,33 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb,
 		return;
 	}
 }
+
+#if defined(CONFIG_NET_IPV4)
+static void dhcpv4_bound_event_handler(struct net_mgmt_event_callback *cb,
+				      uint32_t event,
+				      struct net_if *iface)
+{
+	if (event != NET_EVENT_IPV4_DHCP_BOUND) {
+		return;
+	}
+
+	const struct net_if_dhcpv4 *dhcpv4 = cb->info;
+	char addr[NET_IPV4_ADDR_LEN];
+	char subnet[NET_IPV4_ADDR_LEN];
+	char router[NET_IPV4_ADDR_LEN];
+
+	if (!net_addr_ntop(AF_INET, &dhcpv4->requested_ip, addr, sizeof(addr)) ||
+	    !net_addr_ntop(AF_INET, &dhcpv4->netmask, subnet, sizeof(subnet)) ||
+	    !net_addr_ntop(AF_INET, &dhcpv4->server_id, router, sizeof(router))) {
+		LOG_WRN("Failed to format DHCPv4 info");
+		return;
+	}
+
+	LOG_INF("IP Address[1]: %s", addr);
+	LOG_INF("Net Subnet[1]: %s", subnet);
+	LOG_INF("Net Router[1]: %s", router);
+}
+#endif /* defined(CONFIG_NET_IPV4) */
 
 /* Update the LED states. Returns 0 if it was updated, otherwise -1. */
 static int led_update(uint8_t index, uint8_t state)
@@ -776,6 +807,12 @@ int main(void)
 	/* Setup handler for Zephyr NET Connection Manager Connectivity layer. */
 	net_mgmt_init_event_callback(&conn_cb, connectivity_event_handler, CONN_LAYER_EVENT_MASK);
 	net_mgmt_add_event_callback(&conn_cb);
+
+#if defined(CONFIG_NET_IPV4)
+	net_mgmt_init_event_callback(&ipv4_cb, dhcpv4_bound_event_handler,
+				      NET_EVENT_IPV4_DHCP_BOUND);
+	net_mgmt_add_event_callback(&ipv4_cb);
+#endif /* defined(CONFIG_NET_IPV4) */
 
 	ret = conn_mgr_all_if_up(true);
 	if (ret) {
