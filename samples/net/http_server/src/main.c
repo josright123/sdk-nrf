@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <stdlib.h>
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -176,20 +177,60 @@ static int led_update(uint8_t index, uint8_t state)
 	return 0;
 }
 
+/* Copy the HTTP request URL into a null-terminated buffer. */
+static int request_url_to_cstr(const struct http_req *request, char *dst, size_t dst_size)
+{
+	if (request->url_len + 1 > dst_size) {
+		LOG_WRN("URL too long (%d)", (int)request->url_len);
+		return -ENOBUFS;
+	}
+
+	memcpy(dst, request->url, request->url_len);
+	dst[request->url_len] = '\0';
+
+	return 0;
+}
+
+/* Copy the HTTP request body into a null-terminated buffer. */
+static int request_body_to_cstr(const struct http_req *request, char *dst, size_t dst_size)
+{
+	if (request->body_len + 1 > dst_size) {
+		LOG_WRN("Body too long (%d)", (int)request->body_len);
+		return -ENOBUFS;
+	}
+
+	memcpy(dst, request->body, request->body_len);
+	dst[request->body_len] = '\0';
+
+	return 0;
+}
+
 static int handle_put(struct http_req *request, char *response, size_t response_size)
 {
 	int ret;
 	uint8_t led_id, led_index;
+	char url[64];
+	char body[8];
 
 	if (request->body_len < 1) {
 		LOG_ERR("No request body");
 		return -EBADMSG;
 	}
 
+	ret = request_url_to_cstr(request, url, sizeof(url));
+	if (ret) {
+		return ret;
+	}
+
+	ret = request_body_to_cstr(request, body, sizeof(body));
+	if (ret) {
+		return ret;
+	}
+
 	/* Get LED ID */
-	ret = sscanf(request->url, "/led/%hhu", &led_id);
+	ret = sscanf(url, "/led/%hhu", &led_id);
 	if (ret != 1) {
-		LOG_WRN("Invalid URL: %s", request->url);
+		LOG_WRN("Invalid URL: %s", url);
 		return -EINVAL;
 	}
 
@@ -201,7 +242,7 @@ static int handle_put(struct http_req *request, char *response, size_t response_
 
 	led_index = led_id - 1;
 
-	ret = led_update(led_index, (uint8_t)atoi(request->body));
+	ret = led_update(led_index, (uint8_t)strtol(body, NULL, 10));
 	if (ret) {
 		LOG_WRN("Update failed for LED %d", led_index);
 		return ret;
@@ -221,9 +262,15 @@ static int handle_get(struct http_req *request, char *response, size_t response_
 	int ret;
 	char body[512];
 	uint8_t led_id, led_index;
+	char url[128];
+
+	ret = request_url_to_cstr(request, url, sizeof(url));
+	if (ret) {
+		return ret;
+	}
 
 	/* Handle root path - return HTML guide page */
-	if (strcmp(request->url, "/") == 0) {
+	if (strcmp(url, "/") == 0) {
 		ret = snprintk(body, sizeof(body),
 			       "<!DOCTYPE html><html><head><title>HTTP Server</title></head>"
 			       "<body><h1>nRF HTTP Server</h1>"
@@ -249,16 +296,16 @@ static int handle_get(struct http_req *request, char *response, size_t response_
 	}
 
 	/* Ignore favicon and other browser requests */
-	if (strncmp(request->url, "/favicon.ico", 12) == 0 ||
-	    strncmp(request->url, "/apple-touch-icon", 17) == 0) {
+	if (strncmp(url, "/favicon.ico", 12) == 0 ||
+	    strncmp(url, "/apple-touch-icon", 17) == 0) {
 		/* Return 404 for favicon and similar requests */
 		return -EINVAL;
 	}
 
 	/* Get LED ID */
-	ret = sscanf(request->url, "/led/%hhu", &led_id);
+	ret = sscanf(url, "/led/%hhu", &led_id);
 	if (ret != 1) {
-		LOG_WRN("Invalid URL: %s", request->url);
+		LOG_WRN("Invalid URL: %s", url);
 		return -EINVAL;
 	}
 
@@ -308,14 +355,14 @@ static void handle_http_request(struct http_req *request)
 {
 	int ret;
 	char *resp_ptr = RESPONSE_200;
-	char get_response_buffer[100] = { 0 };
+	char get_response_buffer[1024] = { 0 };
 
 	/* Handle the request method */
 	switch (request->method) {
 	case HTTP_PUT:
 		ret = handle_put(request, get_response_buffer, sizeof(get_response_buffer));
 		if (ret) {
-			LOG_WRN("Incoming HTTP GET request, error: %d", ret);
+			LOG_WRN("Incoming HTTP PUT request, error: %d", ret);
 			resp_ptr = (ret == -EINVAL) ? RESPONSE_404 :
 				   (ret == -EBADMSG) ? RESPONSE_400 : RESPONSE_500;
 			break;
@@ -326,7 +373,11 @@ static void handle_http_request(struct http_req *request)
 	case HTTP_GET:
 		ret = handle_get(request, get_response_buffer, sizeof(get_response_buffer));
 		if (ret) {
-			LOG_WRN("Incoming HTTP GET request, error: %d", ret);
+			if (ret != -EINVAL) {
+				LOG_WRN("Incoming HTTP GET request, error: %d", ret);
+			} else {
+				LOG_DBG("Incoming HTTP GET request, returning 404");
+			}
 			resp_ptr = (ret == -EINVAL) ? RESPONSE_404 : RESPONSE_500;
 			break;
 		}
