@@ -291,7 +291,7 @@ static int handle_put(struct http_req *request, char *response, size_t response_
 static int handle_get(struct http_req *request, char *response, size_t response_size)
 {
 	int ret;
-	char body[512];
+	char body[1024];
 	uint8_t led_id, led_index;
 	char url[128];
 
@@ -303,18 +303,16 @@ static int handle_get(struct http_req *request, char *response, size_t response_
 	/* Handle root path - return HTML guide page */
 	if (strcmp(url, "/") == 0) {
 		ret = snprintk(body, sizeof(body),
-			       "<!DOCTYPE html><html><head><title>HTTP Server</title>"
+			       "<!DOCTYPE html><html><head><title>nRF54 HTTP Server</title>"
 			       "<link rel=\"icon\" href=\"data:image/svg+xml,"
 			       "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>"
-			       "<text y='0.9em' font-size='90'>&#128161;</text></svg>\">"
+			       "<text y='.9em' font-size='90'>&#128161;</text></svg>\">"
 			       "</head>"
 			       "<body><h1>nRF HTTP Server</h1>"
-			       "<p>LED 1: %d</p><p>LED 2: %d</p>"
-			       "<p>API Usage:</p>"
-			       "<ul><li>GET /led/1 - Get LED 1 state</li>"
-			       "<li>GET /led/2 - Get LED 2 state</li>"
-			       "<li>PUT /led/1 with body '0' or '1' - Set LED 1</li>"
-			       "<li>PUT /led/2 with body '0' or '1' - Set LED 2</li></ul>"
+			       "<p>LED 1: %d | LED 2: %d</p>"
+			       "<h3>API:</h3>"
+			       "<ul><li>GET /led/1 or /led/2</li>"
+			       "<li>PUT /led/1 or /led/2 (body: 0/1)</li></ul>"
 			       "</body></html>",
 			       led_states[0], led_states[1]);
 		if ((ret < 0) || (ret >= sizeof(body))) {
@@ -394,7 +392,7 @@ static void handle_http_request(struct http_req *request)
 {
 	int ret;
 	char *resp_ptr = RESPONSE_200;
-	char get_response_buffer[1024] = { 0 };
+	char get_response_buffer[1536] = { 0 };
 
 	/* Handle the request method */
 	switch (request->method) {
