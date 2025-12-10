@@ -633,6 +633,8 @@ static void client_conn_handler(void *ptr1, void *ptr2, void *ptr3)
 
 	*sock = -1;
 	*in_use = NULL;
+	
+	LOG_DBG("Client connection handler finished");
 }
 
 static int get_free_slot(int *accepted)
@@ -671,6 +673,11 @@ static void process_tcp(sa_family_t family, int *sock, int *accepted)
 	accepted[slot] = client;
 
 	if (family == AF_INET6) {
+		/* Abort previous thread if it exists and hasn't been cleaned up */
+		if (tcp6_handler_tid[slot] != NULL) {
+			k_thread_abort(tcp6_handler_tid[slot]);
+		}
+		
 		tcp6_handler_tid[slot] = k_thread_create(
 			&tcp6_handler_thread[slot],
 			tcp6_handler_stack[slot],
@@ -682,6 +689,11 @@ static void process_tcp(sa_family_t family, int *sock, int *accepted)
 			THREAD_PRIORITY,
 			0, K_NO_WAIT);
 	} else if (family == AF_INET) {
+		/* Abort previous thread if it exists and hasn't been cleaned up */
+		if (tcp4_handler_tid[slot] != NULL) {
+			k_thread_abort(tcp4_handler_tid[slot]);
+		}
+		
 		tcp4_handler_tid[slot] = k_thread_create(
 			&tcp4_handler_thread[slot],
 			tcp4_handler_stack[slot],
