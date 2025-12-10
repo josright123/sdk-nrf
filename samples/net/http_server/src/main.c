@@ -303,7 +303,11 @@ static int handle_get(struct http_req *request, char *response, size_t response_
 	/* Handle root path - return HTML guide page */
 	if (strcmp(url, "/") == 0) {
 		ret = snprintk(body, sizeof(body),
-			       "<!DOCTYPE html><html><head><title>HTTP Server</title></head>"
+			       "<!DOCTYPE html><html><head><title>HTTP Server</title>"
+			       "<link rel=\"icon\" href=\"data:image/svg+xml,"
+			       "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>"
+			       "<text y='0.9em' font-size='90'>&#128161;</text></svg>\">"
+			       "</head>"
 			       "<body><h1>nRF HTTP Server</h1>"
 			       "<p>LED 1: %d</p><p>LED 2: %d</p>"
 			       "<p>API Usage:</p>"
@@ -326,11 +330,15 @@ static int handle_get(struct http_req *request, char *response, size_t response_
 		return 0;
 	}
 
-	/* Ignore favicon and other browser requests */
+	/* Handle favicon and browser icon requests with 204 No Content */
 	if (strncmp(url, "/favicon.ico", 12) == 0 ||
 	    strncmp(url, "/apple-touch-icon", 17) == 0) {
-		/* Return 404 for favicon and similar requests */
-		return -EINVAL;
+		ret = snprintk(response, response_size,
+			       "HTTP/1.1 204 No Content\r\n\r\n");
+		if ((ret < 0) || (ret >= response_size)) {
+			return -ENOBUFS;
+		}
+		return 0;
 	}
 
 	/* Get LED ID */
