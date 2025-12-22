@@ -182,6 +182,17 @@ static void dhcpv4_bound_event_handler(struct net_mgmt_event_callback *cb,
 }
 #endif /* defined(CONFIG_NET_IPV4) */
 
+#if 1
+static void start_dhcpv4_client(struct net_if *iface, void *user_data)
+{
+	ARG_UNUSED(user_data);
+
+	LOG_INF("DHCPC Start on %s (index=%d)", net_if_get_device(iface)->name,
+		net_if_get_by_iface(iface));
+	net_dhcpv4_start(iface);
+}
+#endif
+
 /* Update the LED states. Returns 0 if it was updated, otherwise -1. */
 static int led_update(uint8_t index, uint8_t state)
 {
@@ -831,6 +842,10 @@ int main(void)
 				      NET_EVENT_IPV4_DHCP_BOUND);
 	net_mgmt_add_event_callback(&ipv4_cb);
 #endif /* defined(CONFIG_NET_IPV4) */
+
+#if 1
+	net_if_foreach(start_dhcpv4_client, NULL);
+#endif
 
 	ret = conn_mgr_all_if_up(true);
 	if (ret) {
