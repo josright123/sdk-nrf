@@ -5,6 +5,7 @@
 
 #include <stdlib.h>
 
+#include <zephyr/devicetree.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
@@ -27,6 +28,13 @@ static const struct device *leds = DEVICE_DT_GET(DT_NODELABEL(npm1300_ek_leds));
 static const struct device *regulators = DEVICE_DT_GET(DT_NODELABEL(npm1300_ek_regulators));
 static const struct device *ldsw = DEVICE_DT_GET(DT_NODELABEL(npm1300_ek_ldo1));
 static const struct device *charger = DEVICE_DT_GET(DT_NODELABEL(npm1300_ek_charger));
+
+#if DT_HAS_ALIAS(led0)
+static const struct gpio_dt_spec dk_led0 = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+#define HAVE_DK_LED0 1
+#else
+#define HAVE_DK_LED0 0
+#endif
 
 static void event_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
@@ -118,22 +126,52 @@ bool configure_events(void)
 
 int main(void)
 {
+	bool pmic_ok = true;
+
+#if HAVE_DK_LED0
+	if (!device_is_ready(dk_led0.port)) {
+		printk("Warning: DK led0 GPIO device not ready\n");
+	} else {
+		int ret = gpio_pin_configure_dt(&dk_led0, GPIO_OUTPUT_INACTIVE);
+
+		if (ret < 0) {
+			printk("Warning: DK led0 configure failed (%d)\n", ret);
+		}
+	}
+#endif
+
 	if (!device_is_ready(leds)) {
-		printk("Error: led device is not ready\n");
-		return 0;
+		printk("Warning: nPM1300 EK led device not ready\n");
+		pmic_ok = false;
 	}
 
 	if (!configure_events()) {
-		printk("Error: could not configure events\n");
-		return 0;
+		printk("Warning: could not configure PMIC events\n");
+		pmic_ok = false;
 	}
 
-	printk("PMIC device ok\n");
+	if (pmic_ok) {
+		printk("PMIC device ok\n");
+	}
 
 	while (1) {
-		led_on(leds, 2U);
+		if (pmic_ok) {
+			led_on(leds, 2U);
+		}
+#if HAVE_DK_LED0
+		if (device_is_ready(dk_led0.port)) {
+			gpio_pin_set_dt(&dk_led0, 1);
+		}
+#endif
 		k_msleep(flash_time_ms);
-		led_off(leds, 2U);
+		if (pmic_ok) {
+			led_off(leds, 2U);
+		}
+#if HAVE_DK_LED0
+		if (device_is_ready(dk_led0.port)) {
+			gpio_pin_set_dt(&dk_led0, 0);
+		}
+#endif
 		k_msleep(flash_time_ms);
 	}
 }
